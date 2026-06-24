@@ -1,0 +1,91 @@
+{
+  "name": "claude-switch",
+  "displayName": "Claude Switch",
+  "description": "Switch Claude Code API profiles and manage API configurations from the VS Code sidebar. Supports Anthropic, DeepSeek, RightCode, and any Anthropic-compatible API provider.",
+  "version": "0.3.2",
+  "publisher": "Dual-Pointers",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Dual-Pointers/claude-code-switch-for-vscode"
+  },
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "categories": ["Other"],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "profile",
+    "switch",
+    "api",
+    "anthropic",
+    "deepseek",
+    "rightcode",
+    "model",
+    "configuration"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "claude-switch-sidebar",
+          "title": "Claude Switch",
+          "icon": "$(arrow-swap)"
+        }
+      ]
+    },
+    "views": {
+      "claude-switch-sidebar": [
+        {
+          "type": "webview",
+          "id": "claude-switch.view",
+          "name": "API Profiles"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "claude-switch.switchProfile",
+        "title": "Claude Switch: Switch API Profile"
+      },
+      {
+        "command": "claude-switch.createProfile",
+        "title": "Claude Switch: Create New Profile"
+      }
+    ],
+    "configuration": {
+      "title": "Claude Switch",
+      "properties": {
+        "claudeSwitch.profilesDir": {
+          "type": "string",
+          "default": "",
+          "description": "Override path to profiles directory. Leave empty for default (~/.claude/profiles)."
+        },
+        "claudeSwitch.settingsFile": {
+          "type": "string",
+          "default": "",
+          "description": "Override path to settings.json. Leave empty for default (~/.claude/settings.json)."
+        },
+        "claudeSwitch.localSettingsFile": {
+          "type": "string",
+          "default": "",
+          "description": "Override path to settings.local.json. Leave empty for default (~/.claude/settings.local.json)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "npx @vscode/vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.94.0",
+    "typescript": "^5.0.0"
+  }
+}
