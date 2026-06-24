@@ -2,7 +2,7 @@
   "name": "claude-switch",
   "displayName": "Claude Switch",
   "description": "Switch Claude Code API profiles and manage API configurations from the VS Code sidebar. Supports Anthropic, DeepSeek, RightCode, and any Anthropic-compatible API provider.",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "publisher": "Dual-Pointers",
   "license": "MIT",
   "repository": {

@@ -188,6 +188,15 @@ code --install-extension claude-switch-0.3.2.vsix
 
 ## 更新日志
 
+### 0.3.3 (2025-06-24)
+
+- **完全重写模型获取逻辑**：不再猜测提供商类型，改为遍历尝试所有可能的 URL + 认证方式组合
+  - 3 种认证策略：`Bearer` → `Bearer + x-api-key` → `x-api-key + anthropic-version`
+  - 多种 URL 模式：`{baseUrl}/v1/models`、`{baseUrl}/models`、`{origin}/v1/models`、`{origin}/models`
+  - 首个成功返回模型的组合立即采用，无需预判提供商类型
+- **新增 Xiaomi (api.xiaomimimo.com) 等第三方 API 支持** — 不再需要手动配置，任何提供商的 API 均可自动发现模型
+- 错误信息现在列出所有尝试过的组合，排查问题更直观
+
 ### 0.3.2 (2025-06-24)
 
 - **修复 DeepSeek 新 API 获取模型失败问题**：新增 `/models` 路径回退（不带 `/v1` 前缀）—— 现在会同时尝试 `/v1/models` 和 `/models` 两个端点

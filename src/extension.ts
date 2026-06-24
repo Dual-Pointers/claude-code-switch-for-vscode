@@ -1029,77 +1029,98 @@ class ClaudeSwitchProvider implements vscode.WebviewViewProvider {
                     return;
                 }
 
-                // Determine if this is an Anthropic-compatible API URL that needs
-                // x-api-key + anthropic-version headers.
-                // - api.anthropic.com: native Anthropic API
-                // - */anthropic or */claude paths: Anthropic-compatible proxies
-                const isAnthropic =
-                    (baseUrl.includes('anthropic.com') && !baseUrl.includes('deepseek')) ||
-                    /\/anthropic(\/|$)/.test(baseUrl) ||
-                    /\/claude(\/|$)/.test(baseUrl);
-
-                // Build URLs to try: {baseUrl}/v1/models, {baseUrl}/models,
-                // {origin}/v1/models, {origin}/models
-                const urlsToTry = [
-                    `${baseUrl}/v1/models`,
-                    `${baseUrl}/models`,
-                ];
+                // ---- Build URL candidates ----
+                // Try the configured baseUrl, then stripped variants (remove /anthropic,
+                // /claude, /v1 etc. path segments to reach the API root).
+                const urlCandidates: string[] = [];
+                const addCandidate = (p: string) => {
+                    const u = p.replace(/\/+$/, '');
+                    if (!urlCandidates.includes(u)) { urlCandidates.push(u); }
+                };
+                addCandidate(`${baseUrl}/v1/models`);
+                addCandidate(`${baseUrl}/models`);
                 try {
                     const u = new URL(baseUrl);
                     const originOnly = `${u.protocol}//${u.host}`;
                     if (originOnly !== baseUrl) {
-                        urlsToTry.push(`${originOnly}/v1/models`);
-                        urlsToTry.push(`${originOnly}/models`);
+                        addCandidate(`${originOnly}/v1/models`);
+                        addCandidate(`${originOnly}/models`);
                     }
-                } catch { /* keep only the first two URLs */ }
+                } catch { /* ignore malformed URL */ }
 
-                // Deduplicate
-                const uniqueUrls = [...new Set(urlsToTry)];
+                console.log(`[Claude-Switch] Fetching models — trying ${urlCandidates.length} URL(s): ${urlCandidates.join(', ')}`);
 
-                let lastError = '';
-                for (const url of uniqueUrls) {
-                    try {
-                        // Build headers: always include Bearer auth + Accept JSON.
-                        // Only include Anthropic-specific headers for Anthropic endpoints.
-                        const headers: Record<string, string> = {
+                // ---- Auth strategies to try (in order) ----
+                // Instead of guessing the provider type, try each strategy
+                // and pick the first one that returns models successfully.
+                const authStrategies: Array<{ label: string; headers: Record<string, string> }> = [
+                    {
+                        label: 'Bearer',
+                        headers: {
                             'Accept': 'application/json',
                             'Authorization': `Bearer ${token}`,
-                        };
-                        if (isAnthropic) {
-                            headers['x-api-key'] = token;
-                            headers['anthropic-version'] = '2023-06-01';
-                        }
+                        },
+                    },
+                    {
+                        label: 'Bearer+x-api-key',
+                        headers: {
+                            'Accept': 'application/json',
+                            'Authorization': `Bearer ${token}`,
+                            'x-api-key': token,
+                        },
+                    },
+                    {
+                        label: 'x-api-key+anthropic-version',
+                        headers: {
+                            'Accept': 'application/json',
+                            'x-api-key': token,
+                            'anthropic-version': '2023-06-01',
+                        },
+                    },
+                ];
 
-                        const resp = await fetch(url, { headers });
-                        if (!resp.ok) {
-                            let errBody = '';
-                            try { errBody = await resp.text(); } catch { /* ignore */ }
-                            if (errBody && errBody.length > 200) {
-                                errBody = errBody.substring(0, 200) + '...';
+                const allErrors: string[] = [];
+
+                for (const url of urlCandidates) {
+                    for (const strategy of authStrategies) {
+                        try {
+                            const resp = await fetch(url, { headers: strategy.headers });
+                            if (!resp.ok) {
+                                let errBody = '';
+                                try { errBody = await resp.text(); } catch { /* ignore */ }
+                                if (errBody && errBody.length > 200) {
+                                    errBody = errBody.substring(0, 200) + '...';
+                                }
+                                allErrors.push(`${url} [${strategy.label}]: HTTP ${resp.status}${errBody ? ' — ' + errBody : ''}`);
+                                continue;
                             }
-                            lastError = `${url}: API returned ${resp.status}${errBody ? ' — ' + errBody : ''}`;
-                            continue;
-                        }
 
-                        const json = await resp.json() as { data?: Array<{ id?: string; model?: string }> };
-                        // Support both `id` and `model` field names in model objects
-                        const models = (json.data || [])
-                            .map((m) => m.id || m.model || '')
-                            .filter((id: string) => id && typeof id === 'string')
-                            .sort();
-                        if (models.length === 0) {
-                            lastError = `${url}: No models returned from API.`;
-                            continue;
+                            const json = await resp.json() as { data?: Array<{ id?: string; model?: string }> };
+                            // Support both `id` and `model` field names
+                            const models = (json.data || [])
+                                .map((m) => m.id || m.model || '')
+                                .filter((id: string) => id && typeof id === 'string')
+                                .sort();
+
+                            if (models.length === 0) {
+                                allErrors.push(`${url} [${strategy.label}]: 200 OK but no models in response`);
+                                continue;
+                            }
+
+                            console.log(`[Claude-Switch] ✓ ${models.length} models from ${url} [${strategy.label}]`);
+                            webview.postMessage({ type: 'modelsResult', models });
+                            return;
+                        } catch (e: any) {
+                            allErrors.push(`${url} [${strategy.label}]: fetch error — ${e.message || e}`);
                         }
-                        console.log(`[Claude-Switch] Fetched ${models.length} models from ${url}`);
-                        webview.postMessage({ type: 'modelsResult', models });
-                        return;
-                    } catch (e: any) {
-                        lastError = `${url}: Failed to fetch models: ${e.message || e}`;
                     }
                 }
-                console.error(`[Claude-Switch] All model fetch attempts failed. Last error: ${lastError}`);
-                webview.postMessage({ type: 'modelsResult', error: lastError || 'Failed to fetch models.' });
+
+                const summary = allErrors.length > 0
+                    ? `Tried ${allErrors.length} combination(s). Last errors:\n${allErrors.slice(-4).join('\n')}`
+                    : 'No URLs to try.';
+                console.error(`[Claude-Switch] All attempts failed.\n${summary}`);
+                webview.postMessage({ type: 'modelsResult', error: summary });
                 break;
             }
             case 'switchProfile': {
